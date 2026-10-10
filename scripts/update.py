@@ -50,3 +50,8 @@ d['catalog_total']=total
 d['artworks']=[a for a in d['artworks'] if 'non exposée' not in a['room'].lower()]
 p.write_text(json.dumps(d,ensure_ascii=False))
 print('COMPLETE',len(d['artworks']),flush=True)
+
+# Keep the image gallery and plan registry in sync with each collection refresh.
+import subprocess
+for script in ["enrich_images.py","build_rooms.py"]:
+ subprocess.run([sys.executable,str(ROOT/"scripts"/script)],check=True)
