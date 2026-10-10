@@ -18,7 +18,7 @@ function card(a){
  const link=element('a','work-link');link.href=a.url;link.target='_blank';link.rel='noopener';link.setAttribute('aria-label',a.title+' — '+a.artist+' · fiche officielle');
  const media=element('div','work-media');
  if(a.image){const img=element('img');img.src=a.image;img.alt=a.title;img.loading='lazy';img.decoding='async';img.referrerPolicy='no-referrer';img.onerror=()=>{media.replaceChildren(element('span','image-missing','Image non disponible'));media.classList.add('no-image');};media.append(img);}else{media.classList.add('no-image');media.append(element('span','image-missing','Image non disponible'));}
- const title=element('h3','',a.title);title.append(element('span','link-arrow',' ->'));
+ const title=element('h3','',a.title);
  link.append(media,title,element('div','artist',a.artist));
  const bottom=element('div','card-bottom');bottom.append(element('div','location',a.floor+' · '+roomLabel(a.room)));
  const heart=element('button','heart',favorites.has(a.id)?'♥':'♡');heart.setAttribute('aria-pressed',String(favorites.has(a.id)));heart.setAttribute('aria-label',(favorites.has(a.id)?'Retirer des favoris : ':'Ajouter aux favoris : ')+a.title);
@@ -26,7 +26,7 @@ function card(a){
  bottom.append(heart);row.append(link,bottom);return row;
 }
 function render(){
- $('favcount').textContent=favorites.size;$('favorites').setAttribute('aria-pressed',String(favoriteOnly));$('listview').setAttribute('aria-pressed',String(view==='list'));$('gridview').setAttribute('aria-pressed',String(view==='grid'));
+ $('favorite-tools').hidden=!favoriteOnly;$('export-favorites').disabled=!favorites.size;$('favcount').textContent=favorites.size;$('favorites').setAttribute('aria-pressed',String(favoriteOnly));$('listview').setAttribute('aria-pressed',String(view==='list'));$('gridview').setAttribute('aria-pressed',String(view==='grid'));
  const r=rooms.find(r=>r.id===$('room').value),matches=selection();if(randomId&&!matches.some(a=>a.id===randomId))randomId=null;
  const displayed=randomId?matches.filter(a=>a.id===randomId):matches.slice(0,limit);
  $('heading').textContent=randomId?'Au hasard':favoriteOnly?'Mes favoris':r?r.label:$('floor').value?floorLabel($('floor').value):'Toutes les salles';
@@ -38,11 +38,33 @@ function render(){
  $('navigation').hidden=!r||!!randomId;const i=available.findIndex(x=>x.id===r?.id);$('prev').disabled=i<=0;$('next').disabled=i<0||i>=available.length-1;
  $('prev').onclick=()=>{if(i>0){$('room').value=available[i-1].id;changed();}};$('next').onclick=()=>{if(i>=0&&i<available.length-1){$('room').value=available[i+1].id;changed();}};
 }
-function changed(){limit=80;randomId=null;render();}
+function changed(){document.querySelector('main').style.minHeight='';limit=80;randomId=null;render();}
 function setView(v){view=v;try{localStorage.setItem('orsay-view',v);}catch{}render();}
 $('listview').onclick=()=>setView('list');$('gridview').onclick=()=>setView('grid');
 $('floor').onchange=()=>{roomOptions();changed();};for(const id of ['room','search','roomsearch'])$(id).addEventListener(id==='room'?'change':'input',()=>{if(id==='roomsearch')$('room').value='';changed();});
 $('favorites').onclick=()=>{favoriteOnly=!favoriteOnly;if(favoriteOnly){for(const id of ['floor','room','search','roomsearch'])$(id).value='';roomOptions();}changed();};
 $('reset').onclick=()=>{for(const id of ['floor','room','search','roomsearch'])$(id).value='';favoriteOnly=false;roomOptions();changed();};$('more').onclick=()=>{limit+=80;render();};
-$('random').onclick=()=>{let pool=selection();if(pool.length>1)pool=pool.filter(a=>a.id!==randomId);if(!pool.length)return;randomId=pool[Math.floor(Math.random()*pool.length)].id;render();};$('allresults').onclick=()=>{randomId=null;render();};
+$('random').onclick=()=>{let pool=selection();if(pool.length>1)pool=pool.filter(a=>a.id!==randomId);if(!pool.length)return;const y=window.scrollY,main=document.querySelector('main');main.style.minHeight=Math.max(0,window.innerHeight-main.getBoundingClientRect().top)+'px';randomId=pool[Math.floor(Math.random()*pool.length)].id;render();window.scrollTo({top:y,left:0,behavior:'instant'});};$('allresults').onclick=()=>{document.querySelector('main').style.minHeight='';randomId=null;render();};
 fetch('data.json').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{data=d.artworks;rooms=d.rooms||[...new Set(data.map(a=>a.room))].map(r=>({id:r,label:roomLabel(r),floor:data.find(a=>a.room===r).floor,sources:[r],note:''}));rooms.sort((a,b)=>(ranks[a.floor]??9)-(ranks[b.floor]??9)||collator.compare(a.label,b.label));const floors=[...new Set(rooms.map(r=>r.floor))].sort((a,b)=>(ranks[a]??9)-(ranks[b]??9));$('floor').append(...floors.map(f=>option(f,floorLabel(f))));roomOptions();$('updated').textContent='Catalogue relevé le '+d.updated.split('-').reverse().join('/')+' · '+data.length+' œuvres.';render();}).catch(()=>{$('count').textContent='Impossible de charger les œuvres. Rechargez la page pour réessayer.';});
+
+function importFavorites(payload){
+ const ids=Array.isArray(payload)?payload:payload?.format==='orsay-favorites'&&payload.version===1?payload.favorites:null;
+ if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string')||ids.length>100000)throw Error('Choisissez un fichier de favoris Orsay exporté depuis le site.');
+ const known=new Set(data.map(a=>a.id)),next=new Set(favorites);let added=0,unknown=0;
+ for(const id of new Set(ids)){if(!known.has(id)){unknown++;continue;}if(!next.has(id)){next.add(id);added++;}}
+ localStorage.setItem('orsay-favorites',JSON.stringify([...next]));favorites=next;changed();
+ $('transfer-status').textContent=added+' favori'+(added!==1?'s':'')+' ajouté'+(added!==1?'s':'')+'.'+(unknown?' '+unknown+' œuvre'+(unknown!==1?'s':'')+' absente'+(unknown!==1?'s':'')+' du catalogue actuel.':'');
+ return {added,unknown};
+}
+$('export-favorites').onclick=()=>{
+ const payload={format:'orsay-favorites',version:1,exportedAt:new Date().toISOString(),favorites:[...favorites]};
+ const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),link=element('a');link.href=url;link.download='orsay-favoris-'+new Date().toISOString().slice(0,10)+'.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+ $('transfer-status').textContent='Fichier exporté. Transférez-le sur l’autre appareil, puis choisissez Importer dans Mes favoris.';
+};
+$('import-favorites').onclick=()=>$('favorites-file').click();
+$('favorites-file').onchange=async()=>{
+ const file=$('favorites-file').files[0];if(!file)return;
+ try{if(file.size>2000000)throw Error('Le fichier est trop volumineux.');const text=await file.text();let payload;try{payload=JSON.parse(text);}catch{throw Error('Ce fichier n’est pas un fichier de favoris JSON valide.');}importFavorites(payload);}
+ catch(error){$('transfer-status').textContent=error.message;}
+ finally{$('favorites-file').value='';}
+};
