@@ -3,6 +3,11 @@ import concurrent.futures,gzip,hashlib,html,json,math,pathlib,re,subprocess,time
 from refresh import BASE,ROOT,clean
 CACHE=ROOT/'.catalogue-cache';CACHE.mkdir(exist_ok=True)
 OUT=ROOT/'catalogue';OUT.mkdir(exist_ok=True)
+ARCHIVE=ROOT/'collection-cache'/'pages.json.gz'
+if ARCHIVE.exists():
+ for name,record in json.loads(gzip.decompress(ARCHIVE.read_bytes())).items():
+  target=CACHE/name
+  if not target.exists():target.write_text(json.dumps(record,ensure_ascii=False))
 def fetch(url):
  key=CACHE/(hashlib.sha256(url.encode()).hexdigest()+'.json')
  if key.exists():return json.loads(key.read_text())
@@ -45,12 +50,16 @@ if __name__=='__main__':
   domain,p=t;j=fetch(url(domain,p));r=convert(j)
   if not r:raise RuntimeError(f'Empty page {domain} {p}; refusing incomplete catalogue')
   return domain,p,r
- with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+ errors=[]
+ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
   futures=[ex.submit(page,t) for t in tasks]
   for n,f in enumerate(concurrent.futures.as_completed(futures),1):
-   domain,p,result=f.result();page_ids[(domain,p)]={a["id"] for a in result}
+   try:domain,p,result=f.result()
+   except Exception as error:errors.append(str(error));print("PAGE ERROR",str(error),flush=True);continue
+   page_ids[(domain,p)]={a["id"] for a in result}
    for a in result:actual[domain].add(a['id']);rows[a['id']]=a
    if n%40==0 or n==len(tasks):print('PAGES',n,'/',len(tasks),'RECORDS',len(rows),flush=True)
+ if errors:raise RuntimeError("Failed pages: "+"; ".join(errors))
  for domain,count in expected.items():
   if len(actual[domain])==count:continue
   # Tied sort values can cross page boundaries on different search replicas.
@@ -78,6 +87,6 @@ if __name__=='__main__':
  shards=[]
  for i in range(0,len(outside),3000):
   name=f'part-{i//3000:03}.json';raw=json.dumps(outside[i:i+3000],ensure_ascii=False,separators=(',',':')).encode();(OUT/name).write_bytes(raw);(OUT/(name+'.gz')).write_bytes(gzip.compress(raw,mtime=0));shards.append({'file':name,'count':len(outside[i:i+3000])})
- manifest={'updated':time.strftime('%Y-%m-%d'),'source':BASE+'/fr/collections/recherche','total':len(rows),'outside':len(outside),'parts':shards}
+ manifest={'updated':time.strftime('%Y-%m-%d'),'source':BASE+'/fr/collections/recherche','total':len(rows),'outside':len(outside),'parts':shards,'complete':True,'expectedOutside':len(outside)}
  (OUT/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
  print('COMPLETE',len(outside),'outside;',sum((OUT/(x['file']+'.gz')).stat().st_size for x in shards),'compressed bytes',flush=True)

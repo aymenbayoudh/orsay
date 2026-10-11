@@ -4,7 +4,7 @@ Guide indépendant des œuvres exposées au musée d’Orsay. Site statique sans
 
 Les localisations sont issues des pages publiques du musée, avec date de collecte affichée. Un accrochage peut changer après cette date. Les favoris restent privés dans le navigateur et ne sont pas envoyés à un serveur.
 
-`python scripts/update.py` actualise les œuvres exposées et leurs localisations à partir du catalogue (nécessite Python 3 et curl). La collecte vérifie la couverture du catalogue avant de remplacer les données. Le workflow GitHub Pages publie le site à chaque push sur main. Il collecte et valide le catalogue public complet par domaines, sauvegarde sa progression en cas d’interruption et réutilise ensuite le catalogue validé en cache.
+`python scripts/update.py` actualise les œuvres exposées et leurs localisations à partir du catalogue (nécessite Python 3 et curl). La collecte vérifie la couverture du catalogue avant de remplacer les données. Le workflow GitHub Pages publie le site à chaque push sur main. Il publie la photographie du catalogue préparée localement et stockée dans le dépôt. La collecte complète reste bloquée par la vérification antirobot du musée : le manifeste indique explicitement que la rubrique hors salles est partielle.
 
 Collecte du 10 octobre 2026 : 2 059 résultats du catalogue, dont une fiche signalée non exposée dans sa propre notice, exclue du guide. Le site contient donc 2 058 œuvres localisées.
 
@@ -14,6 +14,6 @@ Le registre des salles reprend le plan officiel de printemps 2026 et distingue l
 
 La rubrique **Hors salles d’Orsay** contient les notices absentes de la sélection des salles, y compris dépôts, réserves, documents et localisations non précisées. Elle ne prétend pas que toutes ces œuvres sont non exposées partout. Les données sont découpées en blocs compressés, chargés uniquement à l’ouverture de cette rubrique (ou pour retrouver des favoris importés). Les images sont toujours chargées à la demande et restent sur les serveurs du musée. La navigation normale garde uniquement les œuvres des salles.
 
-`python scripts/collect_catalogue.py` reprend la collecte complète à partir de son cache local. Les effectifs uniques par domaine et le total doivent correspondre au catalogue avant publication ; les conflits de pagination sont revérifiés. Pour actualiser la photographie du catalogue dans GitHub Actions, changer le suffixe de version des clés de cache dans le workflow.
+`python scripts/collect_catalogue.py` reprend la collecte complète à partir de son cache local. Les effectifs uniques par domaine et le total doivent correspondre au catalogue avant publication ; les conflits de pagination sont revérifiés. La collecte reprend le cache de pages conservé dans `collection-cache/pages.json.gz`. Après une collecte complète réussie, publier les données et blocs compressés mis à jour. Ne jamais marquer le catalogue complet sans validation des effectifs.
 
 Les polices Montserrat et Unna reprennent celles des listes et titres du site officiel, avec leurs licences OFL dans `fonts/`. La liste affiche une vignette, l’artiste, le titre et la date. La grille garde les proportions des images et réunit artiste et titre. Les favoris peuvent être exportés en JSON et importés par fusion sans doublons.

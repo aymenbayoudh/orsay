@@ -24,38 +24,9 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Restore complete catalogue
-        id: catalogue-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: catalogue
-          key: orsay-complete-catalogue-20261011-v1
-      - name: Restore collection progress
-        if: steps.catalogue-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: .catalogue-cache
-          key: orsay-catalogue-progress-20261011-v1-${{ github.run_id }}
-          restore-keys: orsay-catalogue-progress-20261011-v1-
-      - name: Collect complete public catalogue
-        if: steps.catalogue-cache.outputs.cache-hit != 'true'
-        run: python -u scripts/collect_catalogue.py
-      - name: Save collection progress
-        if: always() && steps.catalogue-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .catalogue-cache
-          key: orsay-catalogue-progress-20261011-v1-${{ github.run_id }}
-      - name: Cache validated catalogue
-        if: success() && steps.catalogue-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: catalogue
-          key: orsay-complete-catalogue-20261011-v1
       - name: Prepare static site
         run: |
           mkdir _site
-          cp catalogue/exposed.json data.json
           cp index.html style.css app.js data.json _site/
           cp -r fonts catalogue _site/
           for file in _site/catalogue/*.json.gz; do gzip -dkf "$file"; done
