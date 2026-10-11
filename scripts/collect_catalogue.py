@@ -15,7 +15,7 @@ def fetch(url):
  if key.exists():return json.loads(key.read_text())
  for attempt in range(4):
   try:
-   response=subprocess.check_output(['curl','-sSL','--max-time','40','-w','\n%{http_code}',url],text=True,stderr=subprocess.DEVNULL)
+   response=subprocess.check_output(['curl','--compressed','-sSL','--max-time','40','-w','\n%{http_code}',url],text=True,stderr=subprocess.DEVNULL)
    s,status=response.rsplit('\n',1)
    if status=='429' or 'I am not a robot' in s:raise HumanVerificationRequired('Le musée exige une vérification humaine. Collecte arrêtée ; progression conservée.')
    if int(status)>=400:raise RuntimeError(f'HTTP {status}: {url}')
@@ -46,7 +46,7 @@ def convert(j):
   title=a['title'];author=clean(title.split('<i>')[0]).rstrip(', ');work=clean(title.split('<i>')[-1]);meta=j['metadata'].get(a['link'],{})
   rows.append({'id':a['id'],'title':work or 'Sans titre','artist':author or 'Auteur non précisé','url':BASE+a['link'],**meta})
  return rows
-if __name__=='__main__':
+def collect():
  first=fetch(url());domains=first['domains'];print('CATALOGUE',first['total'],'DOMAINS',len(domains),flush=True)
  rows={};tasks=[];expected={};actual={};page_ids={}
  for domain,count in domains:
@@ -56,18 +56,26 @@ if __name__=='__main__':
   domain,p=t;j=fetch(url(domain,p));r=convert(j)
   if not r:raise RuntimeError(f'Empty page {domain} {p}; refusing incomplete catalogue')
   return domain,p,r
+ priority={'peintures':0,'peintures et pastels':0,'sculptures':1,'arts décoratifs':2,'médailles':3}
+ tasks.sort(key=lambda t:(not (CACHE/(hashlib.sha256(url(t[0],t[1]).encode()).hexdigest()+'.json')).exists(),priority.get(t[0],4)))
  errors=[]
  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
   futures=[ex.submit(page,t) for t in tasks]
-  for n,f in enumerate(concurrent.futures.as_completed(futures),1):
-   try:domain,p,result=f.result()
-   except HumanVerificationRequired:
-    for pending in futures:pending.cancel()
-    raise
-   except Exception as error:errors.append(str(error));print("PAGE ERROR",str(error),flush=True);continue
-   page_ids[(domain,p)]={a["id"] for a in result}
-   for a in result:actual[domain].add(a['id']);rows[a['id']]=a
-   if n%40==0 or n==len(tasks):print('PAGES',n,'/',len(tasks),'RECORDS',len(rows),flush=True)
+  try:
+   for n,f in enumerate(concurrent.futures.as_completed(futures),1):
+    try:domain,p,result=f.result()
+    except HumanVerificationRequired:
+     for pending in futures:pending.cancel()
+     raise
+    except Exception as error:
+     for pending in futures:pending.cancel()
+     raise RuntimeError("Collection stopped on failed page: "+str(error)) from error
+    page_ids[(domain,p)]={a["id"] for a in result}
+    for a in result:actual[domain].add(a['id']);rows[a['id']]=a
+    if n%40==0 or n==len(tasks):print('PAGES',n,'/',len(tasks),'RECORDS',len(rows),flush=True)
+  except BaseException:
+   for pending in futures:pending.cancel()
+   raise
  if errors:raise RuntimeError("Failed pages: "+"; ".join(errors))
  for domain,count in expected.items():
   if len(actual[domain])==count:continue
@@ -90,7 +98,10 @@ if __name__=='__main__':
  # Preserve individually verified inventory/status metadata during a complete rebuild.
  for supplement in OUT.glob('verified-*.json'):
   for verified in json.loads(supplement.read_text()):
-   if verified['id'] in rows:rows[verified['id']].update(verified)
+   match=next((a for a in rows.values() if a['url']==verified['url']),None)
+   if match:
+    canonical=match['id'];match.update(verified);match['id']=canonical
+    if canonical!=verified['id']:match['legacyIds']=[verified['id']]
  exposed=json.loads((ROOT/'data.json').read_text());exposed_ids={a['id'] for a in exposed['artworks']}
  for a in exposed['artworks']:
   if a['id'] in rows:a.update({k:v for k,v in rows[a['id']].items() if k in ['date','image'] and v})
@@ -103,3 +114,10 @@ if __name__=='__main__':
  manifest={'updated':time.strftime('%Y-%m-%d'),'source':BASE+'/fr/collections/recherche','total':len(rows),'outside':len(outside),'parts':shards,'complete':True,'expectedOutside':len(outside)}
  (OUT/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
  print('COMPLETE',len(outside),'outside;',sum((OUT/(x['file']+'.gz')).stat().st_size for x in shards),'compressed bytes',flush=True)
+
+if __name__=="__main__":
+ try:collect()
+ except (Exception,KeyboardInterrupt):
+  from rebuild_catalogue import rebuild
+  rebuild()
+  raise

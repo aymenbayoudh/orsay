@@ -1,0 +1,69 @@
+name: Complete public catalogue
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/collect_catalogue.py
+      - scripts/rebuild_catalogue.py
+      - .github/workflows/catalogue.yml
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: catalogue
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve public notices and preserve a partial snapshot on failure
+        id: collect
+        continue-on-error: true
+        timeout-minutes: 140
+        run: python scripts/collect_catalogue.py
+      - name: Rebuild interrupted snapshot
+        if: steps.collect.outcome != 'success'
+        run: python scripts/rebuild_catalogue.py
+      - name: Verify catalogue and application
+        run: node tests/app.cjs
+      - name: Save recovered notices
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data.json catalogue collection-cache
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update public catalogue snapshot with verified completeness status'
+            git pull --rebase origin main
+            git push origin main
+          fi
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Prepare site
+        run: |
+          mkdir _site
+          cp index.html style.css app.js data.json logo-orsay.png _site/
+          cp -r fonts catalogue _site/
+          for file in _site/catalogue/*.json.gz; do gzip -dkf "$file"; done
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy recovered catalogue
+        id: deploy
+        uses: actions/deploy-pages@v4
+      - name: Report coverage
+        run: |
+          python - <<'PY'
+          import json,os
+          m=json.load(open('catalogue/manifest.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write(f"Notices hors salles : {m['outside']} / {m['expectedOutside']}. Catalogue complet : {m['complete']}.\n")
+          PY

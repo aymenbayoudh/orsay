@@ -15,3 +15,9 @@
 ## Corrections vérifiées
 
 11 notices ajoutées avec image, statut non exposé à Orsay, inventaire et conservation ; les 9 œuvres Henri Martin du moteur officiel sont présentes. Complément : 28 894 notices, toujours partiel. Les 28 883 notices initiales ne disposent pas d’un statut individuellement vérifié.
+
+## Reprise du 11 octobre
+
+48069 notices hors salles récupérées après réintégration des pages en cache. Le collecteur reprend les pages existantes, donne la priorité aux peintures puis sculptures, demande des réponses compressées et reconstruit un instantané partiel en cas d’erreur. La salle 50 ajoutée par erreur a été retirée. Une salle sans notice n’est pas déclarée vide ; les localisations historiques ne sont pas transformées en localisations actuelles.
+
+Le rapprochement se fait désormais par URL officielle : les identifiants du moteur sont différents des identifiants des fiches. Les huit doublons issus des ajouts vérifiés ont été fusionnés. Les anciens identifiants sont conservés comme alias pour migrer les favoris. Instantané courant : 48 061 notices hors salles.

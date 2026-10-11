@@ -4,13 +4,14 @@ const compact=s=>norm(s).replace(/\s/g,'');
 const collator=new Intl.Collator('fr',{numeric:true});
 const OUTSIDE='Hors salles d’Orsay',OUTSIDE_ROOM='Catalogue hors salles';
 let cataloguePromise=null,catalogueLoaded=false,catalogueLoading=false,catalogueError='',baseCount=0,physicalUpdated='',catalogueMeta=null;
-const loadedParts=new Map();
+const loadedParts=new Map(),favoriteAliases=new Map();
+function migrateFavorites(){favoriteAliases.clear();for(const a of data)for(const id of a.legacyIds||[])favoriteAliases.set(id,a.id);const next=new Set([...favorites].map(id=>favoriteAliases.get(id)||id));if([...next].some(id=>!favorites.has(id))||next.size!==favorites.size){favorites=next;try{localStorage.setItem('orsay-favorites',JSON.stringify([...favorites]));}catch{}}}
 let data=[],rooms=[],favoriteOnly=false,randomId=null,view='list',favorites=new Set();
 try{const v=JSON.parse(localStorage.getItem('orsay-favorites')||'[]');if(Array.isArray(v))favorites=new Set(v.filter(x=>typeof x==='string'));view=localStorage.getItem('orsay-view')==='grid'?'grid':'list';}catch{}
 const artworkLocation=a=>a.floor===OUTSIDE?(a.conservation?('Non exposée à Orsay · '+a.conservation):'Hors salles · localisation à vérifier'):a.floor+' · '+roomLabel(a.room);
 const roomLabel=r=>/^\d/.test(r)?'Salle '+r:r;
 const ranks={'Rez-de-chaussée':0,'Niveau médian':2,'Niveau 3':3,'Niveau 4':4,'Niveau supérieur':5};
-const floorLabel=f=>f===OUTSIDE?OUTSIDE+' · catalogue partiel':({'Rez-de-chaussée':'0 · Rez-de-chaussée','Niveau médian':'2 · Niveau médian','Niveau supérieur':'5 · Niveau supérieur'})[f]||f;
+const floorLabel=f=>f===OUTSIDE?OUTSIDE+(catalogueMeta?.complete?'':' · catalogue partiel'):({'Rez-de-chaussée':'0 · Rez-de-chaussée','Niveau médian':'2 · Niveau médian','Niveau supérieur':'5 · Niveau supérieur'})[f]||f;
 function roomMatches(r,q){if(!q)return true;const query=compact(q).replace(/^salles?/,'');if(/^\d+$/.test(query)){return (/^\d|^salles?\s/i.test(r.label))&&(r.label.match(/\d+/g)||[]).includes(query);}return compact(r.label).includes(query);}
 function roomList(){const f=$('floor').value,q=$('roomsearch').value.trim();return rooms.filter(r=>(f?r.floor===f:r.floor!==OUTSIDE||favoriteOnly)&&roomMatches(r,q));}
 function option(value,text){const o=document.createElement('option');o.value=value;o.textContent=text;return o;}
@@ -37,7 +38,7 @@ function render(){
  $('heading').textContent=randomId?'Au hasard':favoriteOnly?'Mes favoris':r?r.label:$('floor').value?floorLabel($('floor').value):'Toutes les salles';
  $('count').textContent=catalogueLoading&&$('floor').value===OUTSIDE?'Chargement du catalogue…':randomId?'1 '+noun+' · '+matches.length.toLocaleString('fr')+' dans la sélection':matches.length.toLocaleString('fr')+' '+noun+(matches.length!==1?'s':'');
  $('works').className=randomId?'works-grid random-work':'works-'+view;const fragment=document.createDocumentFragment();for(const artwork of displayed)fragment.append(card(artwork));$('works').replaceChildren(fragment);
- if(!matches.length)$('works').append(element('p','empty',catalogueLoading&&$('floor').value===OUTSIDE?'Les notices sont chargées à la demande.':catalogueError&&$('floor').value===OUTSIDE?'Le chargement a échoué. Utilisez Réessayer ci-dessus.':r?'Aucune œuvre n’est localisée ici dans le catalogue consulté.':favoriteOnly?'Aucun favori ne correspond à cette sélection.':'Aucune œuvre ne correspond à cette recherche.'));
+ if(!matches.length)$('works').append(element('p','empty',catalogueLoading&&$('floor').value===OUTSIDE?'Les notices sont chargées à la demande.':catalogueError&&$('floor').value===OUTSIDE?'Le chargement a échoué. Utilisez Réessayer ci-dessus.':r?'Aucune notice localisée dans cette salle dans notre relevé. La salle peut contenir des œuvres absentes du catalogue ou sans numéro de salle renseigné.':favoriteOnly?'Aucun favori ne correspond à cette sélection.':'Aucune œuvre ne correspond à cette recherche.'));
  const partial=catalogueMeta?.complete===false?'Catalogue partiel : '+catalogueMeta.outside.toLocaleString('fr')+' notices récupérées sur '+catalogueMeta.expectedOutside.toLocaleString('fr')+' attendues hors salles. ':'';const note=(outside?partial:'')+(r?.note||($('floor').value===OUTSIDE?'Notices absentes de la sélection des salles : œuvres non exposées à Orsay, dépôts ailleurs ou localisation non précisée. Consultez la fiche officielle pour leur statut exact.':''));$('roomnote').hidden=!note;$('roomnote').textContent=note;$('retry-catalogue').hidden=!catalogueError||$('floor').value!==OUTSIDE;$('allresults').hidden=!randomId;$('random').disabled=!matches.length;
  const available=roomList();$('rooms').replaceChildren(...available.map(room=>{const b=element('button','',room.label);b.setAttribute('aria-pressed',String(room.id===r?.id));b.onclick=()=>{$('room').value=room.id;changed();};return b;}));
  $('navigation').hidden=!r||!!randomId;const i=available.findIndex(x=>x.id===r?.id);$('prev').disabled=i<=0;$('next').disabled=i<0||i>=available.length-1;
@@ -50,13 +51,13 @@ $('floor').onchange=()=>{roomOptions();changed();if($('floor').value===OUTSIDE)l
 $('favorites').onclick=async()=>{favoriteOnly=!favoriteOnly;if(favoriteOnly){for(const id of ['floor','room','search','roomsearch'])$(id).value='';roomOptions();}changed();const known=new Set(data.map(a=>a.id));if(favoriteOnly&&[...favorites].some(id=>!known.has(id)))try{await loadCatalogue();}catch{ $('transfer-status').textContent='Certains favoris nécessitent le catalogue hors salles. Réessayez son chargement.';}};
 $('reset').onclick=()=>{for(const id of ['floor','room','search','roomsearch'])$(id).value='';favoriteOnly=false;roomOptions();changed();};
 $('random').onclick=()=>{let pool=selection();if(pool.length>1)pool=pool.filter(a=>a.id!==randomId);if(!pool.length)return;const y=window.scrollY,main=document.querySelector('main');main.style.minHeight=Math.max(0,window.innerHeight-main.getBoundingClientRect().top)+'px';randomId=pool[Math.floor(Math.random()*pool.length)].id;render();window.scrollTo({top:y,left:0,behavior:'instant'});};$('allresults').onclick=()=>{document.querySelector('main').style.minHeight='';randomId=null;render();};
-fetch('data.json',{cache:'no-cache'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{data=d.artworks;baseCount=data.length;physicalUpdated=d.updated;rooms=d.rooms||[...new Set(data.map(a=>a.room))].map(r=>({id:r,label:roomLabel(r),floor:data.find(a=>a.room===r).floor,sources:[r],note:''}));rooms.push({id:'outside',label:'Hors salles / autres localisations',floor:OUTSIDE,sources:[OUTSIDE_ROOM],note:'Notices absentes de la sélection des salles : œuvres non exposées à Orsay, dépôts ailleurs ou localisation non précisée. La fiche officielle indique leur statut exact.'});rooms.sort((a,b)=>(ranks[a.floor]??9)-(ranks[b.floor]??9)||collator.compare(a.label,b.label));const floors=[...new Set(rooms.map(r=>r.floor))].sort((a,b)=>(ranks[a]??9)-(ranks[b]??9));$('floor').append(...floors.map(f=>option(f,floorLabel(f))));roomOptions();$('updated').textContent='Catalogue relevé le '+d.updated.split('-').reverse().join('/')+' · '+data.length+' œuvres.';render();}).catch(()=>{$('count').textContent='Impossible de charger les œuvres. Rechargez la page pour réessayer.';});
+fetch('data.json',{cache:'no-cache'}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{data=d.artworks;migrateFavorites();baseCount=data.length;physicalUpdated=d.updated;rooms=d.rooms||[...new Set(data.map(a=>a.room))].map(r=>({id:r,label:roomLabel(r),floor:data.find(a=>a.room===r).floor,sources:[r],note:''}));rooms.push({id:'outside',label:'Hors salles / autres localisations',floor:OUTSIDE,sources:[OUTSIDE_ROOM],note:'Notices absentes de la sélection des salles : œuvres non exposées à Orsay, dépôts ailleurs ou localisation non précisée. La fiche officielle indique leur statut exact.'});rooms.sort((a,b)=>(ranks[a.floor]??9)-(ranks[b.floor]??9)||collator.compare(a.label,b.label));const floors=[...new Set(rooms.map(r=>r.floor))].sort((a,b)=>(ranks[a]??9)-(ranks[b]??9));$('floor').append(...floors.map(f=>option(f,floorLabel(f))));roomOptions();$('updated').textContent='Catalogue relevé le '+d.updated.split('-').reverse().join('/')+' · '+data.length+' œuvres.';render();}).catch(()=>{$('count').textContent='Impossible de charger les œuvres. Rechargez la page pour réessayer.';});
 
 function importFavorites(payload){
  const ids=Array.isArray(payload)?payload:payload?.format==='orsay-favorites'&&payload.version===1?payload.favorites:null;
  if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string')||ids.length>250000)throw Error('Choisissez un fichier de favoris Orsay exporté depuis le site.');
  const known=new Set(data.map(a=>a.id)),next=new Set(favorites);let added=0,unknown=0,pending=0;
- for(const id of new Set(ids)){if(!known.has(id)){if(catalogueMeta?.complete===false&&/^\d+$/.test(id)){if(!next.has(id)){next.add(id);pending++;}}else unknown++;continue;}if(!next.has(id)){next.add(id);added++;}}
+ for(const id of new Set(ids.map(id=>favoriteAliases.get(id)||id))){if(!known.has(id)){if(catalogueMeta?.complete===false&&/^\d+$/.test(id)){if(!next.has(id)){next.add(id);pending++;}}else unknown++;continue;}if(!next.has(id)){next.add(id);added++;}}
  localStorage.setItem('orsay-favorites',JSON.stringify([...next]));favorites=next;changed();
  $('transfer-status').textContent=added+' favori'+(added!==1?'s':'')+' ajouté'+(added!==1?'s':'')+'.'+(pending?' '+pending+' favori'+(pending!==1?'s':'')+' conservé'+(pending!==1?'s':'')+' en attente du catalogue complet.':'')+(unknown?' '+unknown+' œuvre'+(unknown!==1?'s':'')+' absente'+(unknown!==1?'s':'')+' du catalogue actuel.':'');
  return {added,unknown,pending};
@@ -83,8 +84,8 @@ function loadCatalogue(){
   async function worker(){
    while(next<manifest.parts.length){const i=next++,part=manifest.parts[i];let rows=loadedParts.get(part.file);
     if(!rows){let response;
-     if(typeof DecompressionStream!=='undefined'){response=await fetch('catalogue/'+part.file+'.gz');if(!response.ok)throw Error('Notice indisponible');rows=await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();}
-     else{response=await fetch('catalogue/'+part.file);if(!response.ok)throw Error('Notice indisponible');rows=await response.json();}
+     if(typeof DecompressionStream!=='undefined'){response=await fetch('catalogue/'+part.file+'.gz?v='+encodeURIComponent(manifest.revision||manifest.updated));if(!response.ok)throw Error('Notice indisponible');rows=await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();}
+     else{response=await fetch('catalogue/'+part.file+'?v='+encodeURIComponent(manifest.revision||manifest.updated));if(!response.ok)throw Error('Notice indisponible');rows=await response.json();}
      if(!Array.isArray(rows)||rows.length!==part.count)throw Error('Catalogue incomplet');loadedParts.set(part.file,rows);
     }
     results[i]=rows;done++;if($('floor').value===OUTSIDE)$('count').textContent='Chargement du catalogue · '+Math.round(done/manifest.parts.length*100)+' %';
@@ -93,7 +94,7 @@ function loadCatalogue(){
   const tasks=Array.from({length:4},worker);const settled=await Promise.allSettled(tasks);const failure=settled.find(r=>r.status==='rejected');if(failure)throw failure.reason;
   const ids=new Set(data.map(a=>a.id)),additional=[];
   for(const part of results)for(const a of part){if(ids.has(a.id))throw Error('Doublon dans le catalogue');ids.add(a.id);additional.push({...a,floor:OUTSIDE,room:OUTSIDE_ROOM});}
-  if(additional.length!==manifest.outside)throw Error('Catalogue incomplet');for(const a of additional)data.push(a);catalogueLoaded=true;catalogueMeta=manifest;loadedParts.clear();
+  if(additional.length!==manifest.outside)throw Error('Catalogue incomplet');for(const a of additional)data.push(a);migrateFavorites();catalogueLoaded=true;catalogueMeta=manifest;loadedParts.clear();
  })().catch(error=>{catalogueError=error.message;throw error;}).finally(()=>{catalogueLoading=false;cataloguePromise=null;render();});
  return cataloguePromise;
 }
