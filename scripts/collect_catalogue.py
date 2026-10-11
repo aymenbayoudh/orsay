@@ -8,12 +8,17 @@ if ARCHIVE.exists():
  for name,record in json.loads(gzip.decompress(ARCHIVE.read_bytes())).items():
   target=CACHE/name
   if not target.exists():target.write_text(json.dumps(record,ensure_ascii=False))
+class HumanVerificationRequired(RuntimeError):pass
+
 def fetch(url):
  key=CACHE/(hashlib.sha256(url.encode()).hexdigest()+'.json')
  if key.exists():return json.loads(key.read_text())
  for attempt in range(4):
   try:
-   s=subprocess.check_output(['curl','-fsSL','--max-time','40',url],text=True,stderr=subprocess.DEVNULL)
+   response=subprocess.check_output(['curl','-sSL','--max-time','40','-w','\n%{http_code}',url],text=True,stderr=subprocess.DEVNULL)
+   s,status=response.rsplit('\n',1)
+   if status=='429' or 'I am not a robot' in s:raise HumanVerificationRequired('Le musée exige une vérification humaine. Collecte arrêtée ; progression conservée.')
+   if int(status)>=400:raise RuntimeError(f'HTTP {status}: {url}')
    j=json.loads(re.search(r'<script type="application/json" data-drupal-selector="drupal-settings-json">(.*?)</script>',s).group(1))
    items=j['moo_search_artworks']['results']['items_list'];total=int(re.search(r'precise">(\d+)</span>',s).group(1))
    metadata={}
@@ -26,6 +31,7 @@ def fetch(url):
     domains=[(html.unescape(a),int(b)) for a,b in re.findall(r'data-drupal-facet-item-value="([^\"]+)"[^>]*data-drupal-facet-item-count="([^\"]+)"',facet.group(1))]
    result={'items':items,'total':total,'metadata':metadata,'domains':domains}
    key.write_text(json.dumps(result,ensure_ascii=False));return result
+  except HumanVerificationRequired:raise
   except Exception:
    if attempt==3:raise
    time.sleep(2+attempt)
@@ -55,6 +61,9 @@ if __name__=='__main__':
   futures=[ex.submit(page,t) for t in tasks]
   for n,f in enumerate(concurrent.futures.as_completed(futures),1):
    try:domain,p,result=f.result()
+   except HumanVerificationRequired:
+    for pending in futures:pending.cancel()
+    raise
    except Exception as error:errors.append(str(error));print("PAGE ERROR",str(error),flush=True);continue
    page_ids[(domain,p)]={a["id"] for a in result}
    for a in result:actual[domain].add(a['id']);rows[a['id']]=a
