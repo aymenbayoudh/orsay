@@ -11,3 +11,7 @@
 - Exemples de lacunes vérifiées : Nymphéas bleus de Claude Monet (1172), Le Jardin au soleil d’Henri Jean Guillaume Martin (80107).
 - Sources : https://www.musee-orsay.fr/fr/oeuvres/nympheas-bleus-1172 ; https://www.musee-orsay.fr/fr/oeuvres/le-jardin-au-soleil-80107
 - Le contrôle de complétude du collecteur compare les identifiants uniques par domaine et le total global avant de marquer un résultat complet. Il ne faut pas remplacer ce contrôle par un simple nombre de pages téléchargées.
+
+## Corrections vérifiées
+
+11 notices ajoutées avec image, statut non exposé à Orsay, inventaire et conservation ; les 9 œuvres Henri Martin du moteur officiel sont présentes. Complément : 28 894 notices, toujours partiel. Les 28 883 notices initiales ne disposent pas d’un statut individuellement vérifié.

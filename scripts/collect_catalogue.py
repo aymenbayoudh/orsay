@@ -87,6 +87,10 @@ if __name__=='__main__':
      for a in result:actual[domain].add(a['id']);rows[a['id']]=a
   if len(actual[domain])!=count:raise RuntimeError(f'Incomplete {domain}: {len(actual[domain])}/{count}')
  if len(rows)!=first['total']:raise RuntimeError(f'Incomplete total: {len(rows)}/{first["total"]}')
+ # Preserve individually verified inventory/status metadata during a complete rebuild.
+ for supplement in OUT.glob('verified-*.json'):
+  for verified in json.loads(supplement.read_text()):
+   if verified['id'] in rows:rows[verified['id']].update(verified)
  exposed=json.loads((ROOT/'data.json').read_text());exposed_ids={a['id'] for a in exposed['artworks']}
  for a in exposed['artworks']:
   if a['id'] in rows:a.update({k:v for k,v in rows[a['id']].items() if k in ['date','image'] and v})

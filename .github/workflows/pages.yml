@@ -27,7 +27,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir _site
-          cp index.html style.css app.js data.json _site/
+          cp index.html style.css app.js data.json logo-orsay.png _site/
           cp -r fonts catalogue _site/
           for file in _site/catalogue/*.json.gz; do gzip -dkf "$file"; done
           touch _site/.nojekyll
